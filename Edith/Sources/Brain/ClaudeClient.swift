@@ -29,6 +29,7 @@ enum ClaudeClient {
     case modelUsed(String)
     case text(String)
     case toolUse(ToolUse)
+    case serverToolStarted(String)
     case stopReason(String)
     case usage(Usage)
     case assistantBlocks([[String: Any]])
@@ -129,6 +130,9 @@ enum ClaudeClient {
               if let text = block["text"] as? String, !text.isEmpty {
                 textAcc[index] = text
                 continuation.yield(.text(text))
+              }
+              if block["type"] as? String == "server_tool_use" {
+                continuation.yield(.serverToolStarted(block["name"] as? String ?? "server_tool"))
               }
 
             case "content_block_delta":

@@ -53,6 +53,16 @@ final class Settings: @unchecked Sendable {
   var model: String { didSet { d.set(model, forKey: "model") } }
   var effort: String { didSet { d.set(effort, forKey: "effort") } }
   var webSearchEnabled: Bool { didSet { d.set(webSearchEnabled, forKey: "webSearchEnabled") } }
+  /// Hızlı arama: sonuçları sunucuda süzmeyen, daha çabuk dönen sürüm.
+  var fastWebSearch: Bool { didSet { d.set(fastWebSearch, forKey: "fastWebSearch") } }
+  /// Sustuktan sonra komutun bittiğine karar verilen süre (saniye).
+  var commandSilence: Double { didSet { d.set(commandSilence, forKey: "commandSilence") } }
+  static let silenceOptions: [(id: Double, label: String)] = [
+    (0.8, "0.8 sn (çok hızlı, cümle bölünebilir)"),
+    (1.0, "1.0 sn"),
+    (1.2, "1.2 sn (varsayılan)"),
+    (1.5, "1.5 sn (yavaş konuşanlar için)"),
+  ]
 
   // Edith
   var assistantName: String { didSet { d.set(assistantName, forKey: "assistantName") } }
@@ -88,6 +98,8 @@ final class Settings: @unchecked Sendable {
     model = d.string(forKey: "model") ?? "claude-opus-5"
     effort = d.string(forKey: "effort") ?? "low"
     webSearchEnabled = d.object(forKey: "webSearchEnabled") as? Bool ?? true
+    fastWebSearch = d.object(forKey: "fastWebSearch") as? Bool ?? true
+    commandSilence = d.object(forKey: "commandSilence") as? Double ?? 1.2
     assistantName = d.string(forKey: "assistantName") ?? "Edith"
     wakeWord = d.string(forKey: "wakeWord") ?? "Edith"
     userName = d.string(forKey: "userName") ?? "Hasan"

@@ -112,7 +112,7 @@ enum Tools {
   /// reddedilen ülkelerde konum bilgisi eklenmez.
   @MainActor
   static func webSearchDefinition(variant: String, rejectedCountries: Set<String>) -> [String: Any] {
-    var definition: [String: Any] = ["type": variant, "name": "web_search", "max_uses": 3]
+    var definition: [String: Any] = ["type": variant, "name": "web_search", "max_uses": 2]
     if let location = LocationService.shared.userLocationForSearch {
       let country = (location["country"] as? String ?? "").uppercased()
       if country.isEmpty || !rejectedCountries.contains(country) {
