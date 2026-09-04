@@ -1,0 +1,1 @@
+Edith/Sources/Brain/EdithController.swift:436:13: error: switch must be exhaustive
