@@ -3,7 +3,7 @@ import Observation
 import UIKit
 
 /// Edith'in beyni ve durum makinesi:
-/// dinle → "Edith" duy → komutu topla → gör → düşün → konuş → dinle.
+/// dinle → "Edith" duy → komutu topla → gör → düşün (gerekirse araç kullan) → konuş → dinle.
 @Observable
 @MainActor
 final class EdithController {
@@ -16,11 +16,17 @@ final class EdithController {
     case speaking = "Konuşuyor"
   }
 
+  enum TranslationDirection {
+    case toTarget    // Türkçe → hedef dil
+    case fromTarget  // hedef dil → Türkçe
+  }
+
   struct TranscriptEntry: Identifiable {
     enum Role { case user, edith, system }
     let id = UUID()
     let role: Role
     let text: String
+    var costUSD: Double? = nil
     let time = Date()
   }
 
@@ -28,6 +34,8 @@ final class EdithController {
   private(set) var transcript: [TranscriptEntry] = []
   private(set) var lastHeard = ""
   private(set) var isListeningActive = false
+  private(set) var translationMode = false
+  private(set) var translationDirection: TranslationDirection = .toTarget
   var lastError: String?
 
   @ObservationIgnored let glasses: GlassesManager
@@ -58,24 +66,10 @@ final class EdithController {
     speech.onEvent = { [weak self] event in
       self?.handleSpeech(event)
     }
-  }
-
-  /// Edith sustu: ayar açıksa bir süre uyandırma kelimesi olmadan dinle.
-  private func finishedSpeaking() {
-    guard isListeningActive else {
-      state = .idle
-      return
+    TimerService.shared.onFire = { [weak self] label in
+      self?.timerFired(label)
     }
-    let seconds = Settings.shared.followUpSeconds
-    guard seconds > 0 else {
-      state = .listening
-      return
-    }
-    // Tamponu sıfırla ki Edith'in kendi sesinden kalan yankı komut sayılmasın.
-    speech.restartRecognition()
-    ignoreSpeechUntil = Date().addingTimeInterval(0.5)
-    followUpUntil = Date().addingTimeInterval(TimeInterval(seconds))
-    state = .followUp
+    SceneMemory.shared.start(glasses: glasses)
   }
 
   // MARK: Dinleme
@@ -93,8 +87,11 @@ final class EdithController {
       return
     }
     isListeningActive = true
-    state = .listening
+    state = translationMode ? .followUp : .listening
+    if translationMode { followUpUntil = .distantFuture }
     log("Dinleme başladı. Uyandırma kelimesi: \(Settings.shared.wakeWord)")
+    LocationService.shared.start()
+    await TimerService.shared.requestPermission()
     tickTask?.cancel()
     tickTask = Task { [weak self] in
       while let self, !Task.isCancelled, self.isListeningActive {
@@ -116,9 +113,13 @@ final class EdithController {
     }
   }
 
-  /// Uyandırma kelimesi olmadan, elle komut toplamaya başla.
+  /// Uyandırma kelimesi olmadan, elle komut toplamaya başla (Action Button, Siri, buton).
   func beginManualCapture() {
     guard isListeningActive else { return }
+    if state == .speaking || state == .thinking {
+      requestTask?.cancel()
+      speaker.stop()
+    }
     enterCapturing(initialCommand: "")
   }
 
@@ -135,6 +136,40 @@ final class EdithController {
     addSystemLine("Konuşma geçmişi sıfırlandı.")
   }
 
+  // MARK: Çeviri modu
+
+  func setTranslation(enabled: Bool) {
+    guard enabled != translationMode else { return }
+    translationMode = enabled
+    requestTask?.cancel()
+    speaker.stop()
+    commandText = ""
+    speech.holdRestart = false
+    if enabled {
+      translationDirection = .toTarget
+      speech.setLocale("tr-TR")
+      let target = Settings.translationLabel(Settings.shared.translationTarget)
+      addSystemLine("Çeviri modu açık: Türkçe → \(target)")
+      speakAndLog("Çeviri modu açık. Konuş, \(target) söyleyeyim. Karşı taraf konuşacaksa ekrandan yönü değiştir.")
+    } else {
+      speech.setLocale("tr-TR")
+      followUpUntil = .distantPast
+      addSystemLine("Çeviri modu kapandı.")
+      speakAndLog("Çeviri modu kapandı.")
+    }
+  }
+
+  func setTranslationDirection(_ direction: TranslationDirection) {
+    guard translationMode else { return }
+    translationDirection = direction
+    commandText = ""
+    speech.setLocale(direction == .fromTarget ? Settings.shared.translationTarget : "tr-TR")
+    if isListeningActive, state != .speaking, state != .thinking {
+      state = .followUp
+      followUpUntil = .distantFuture
+    }
+  }
+
   // MARK: Konuşma tanıma olayları
 
   private func handleSpeech(_ event: SpeechListener.Event) {
@@ -143,6 +178,11 @@ final class EdithController {
       lastHeard = text
       guard Date() >= ignoreSpeechUntil else { return }
       let (heardWake, command) = Self.extractCommand(from: text, wakeWord: Settings.shared.wakeWord)
+
+      if translationMode {
+        handleTranslationSpeech(text: text, heardWake: heardWake, command: command, isFinal: { if case .final = event { return true }; return false }())
+        return
+      }
 
       switch state {
       case .listening, .idle:
@@ -179,6 +219,32 @@ final class EdithController {
     }
   }
 
+  private func handleTranslationSpeech(text: String, heardWake: Bool, command: String, isFinal: Bool) {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if heardWake, translationDirection == .toTarget {
+      let n = Self.normalize(command)
+      if n.contains("kapat") || n.contains("bitir") {
+        setTranslation(enabled: false)
+        speech.restartRecognition()
+        return
+      }
+    }
+    switch state {
+    case .listening, .followUp, .idle:
+      if trimmed.count >= 2 { enterCapturing(initialCommand: trimmed, chime: false) }
+    case .capturing:
+      if trimmed != commandText {
+        commandText = trimmed
+        commandLastChange = Date()
+      }
+    case .thinking, .speaking:
+      break
+    }
+    if isFinal, state == .capturing, !commandText.isEmpty {
+      finalize(command: commandText)
+    }
+  }
+
   private func enterCapturing(initialCommand: String, chime: Bool = true) {
     state = .capturing
     commandText = initialCommand
@@ -190,7 +256,7 @@ final class EdithController {
       Chime.shared.play(.wake)
       log("Uyandırma kelimesi duyuldu. Komut: \"\(initialCommand)\"")
     } else {
-      log("Devam penceresinde konuşma: \"\(initialCommand)\"")
+      log("Konuşma yakalandı: \"\(initialCommand)\"")
     }
   }
 
@@ -205,6 +271,14 @@ final class EdithController {
     if !commandText.isEmpty {
       if now.timeIntervalSince(commandLastChange) >= commandSilence {
         finalize(command: commandText)
+      }
+      return
+    }
+    if translationMode {
+      if now.timeIntervalSince(wakeTime) >= giveUpAfter {
+        state = .followUp
+        followUpUntil = .distantFuture
+        speech.holdRestart = false
       }
       return
     }
@@ -229,21 +303,79 @@ final class EdithController {
     if isListeningActive { speech.restartRecognition() }
     commandText = ""
     if isListeningActive { Chime.shared.play(.sent) }
-    state = .thinking
     transcript.append(TranscriptEntry(role: .user, text: trimmed))
     requestTask?.cancel()
-    requestTask = Task { [weak self] in
-      await self?.ask(trimmed)
+
+    if translationMode {
+      state = .thinking
+      requestTask = Task { [weak self] in await self?.runTranslation(trimmed) }
+      return
     }
+    if handleLocalCommand(trimmed) {
+      return
+    }
+    state = .thinking
+    requestTask = Task { [weak self] in await self?.ask(trimmed) }
   }
 
-  // MARK: Claude
+  /// Claude'a gitmeden yerelde çözülen komutlar (çeviri modu aç/kapat).
+  private func handleLocalCommand(_ command: String) -> Bool {
+    let n = Self.normalize(command)
+    guard n.contains("ceviri") else { return false }
+    let tokens = Set(n.split(separator: " ").map(String.init))
+    let close = tokens.contains("kapat") || tokens.contains("bitir") || tokens.contains("kapa") || tokens.contains("dur")
+    let open = tokens.contains("ac") || tokens.contains("acalim") || tokens.contains("baslat") || tokens.contains("gec") || tokens.contains("gecelim") || n.contains("ceviri modu")
+    if close {
+      setTranslation(enabled: false)
+      return true
+    }
+    if open {
+      setTranslation(enabled: true)
+      return true
+    }
+    return false
+  }
+
+  /// Edith sustu: çeviri modunda dinlemeye devam; normalde ayar açıksa devam penceresi.
+  private func finishedSpeaking() {
+    guard isListeningActive else {
+      state = .idle
+      return
+    }
+    if translationMode {
+      speech.restartRecognition()
+      ignoreSpeechUntil = Date().addingTimeInterval(0.5)
+      followUpUntil = .distantFuture
+      state = .followUp
+      return
+    }
+    let seconds = Settings.shared.followUpSeconds
+    guard seconds > 0 else {
+      state = .listening
+      return
+    }
+    speech.restartRecognition()
+    ignoreSpeechUntil = Date().addingTimeInterval(0.5)
+    followUpUntil = Date().addingTimeInterval(TimeInterval(seconds))
+    state = .followUp
+  }
+
+  private func timerFired(_ label: String) {
+    Chime.shared.play(.wake)
+    addSystemLine("Süre doldu: \(label)")
+    if state == .capturing || state == .thinking {
+      requestTask?.cancel()
+    }
+    state = .speaking
+    speaker.speak("Süre doldu: \(label).")
+  }
+
+  // MARK: Claude (araç döngüsüyle)
 
   private func ask(_ command: String) async {
     let settings = Settings.shared
     guard !settings.apiKey.isEmpty else {
       speakAndLog("Önce ayarlardan API anahtarını girmen lazım.")
-      state = isListeningActive ? .listening : .idle
       return
     }
 
@@ -256,63 +388,122 @@ final class EdithController {
         image = glasses.currentFrameJPEG()
       }
     }
-    let timeText = DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .short)
     let context = image == nil
-      ? "Bu mesajda görüntü yok; gözler kapalı ya da bağlı değil."
-      : "Ekli görüntü şu anki bakış açımı gösteriyor."
-    let userText = "\(command)\n\n(Şu an: \(timeText). \(context))"
-    conversation.appendUser(text: userText, image: image)
+      ? "(Bu mesajda görüntü yok; gözler kapalı ya da bağlı değil.)"
+      : "(Ekli görüntü şu anki bakış açımı gösteriyor.)"
+    conversation.appendUser(text: "\(command)\n\(context)", image: image)
     log("Claude'a gidiyor: \"\(command)\" \(image == nil ? "görüntüsüz" : "görüntülü, \(image!.count / 1024) KB")")
 
+    var messages = conversation.apiMessages()
+    let localTools = Tools.definitions()
+    var searchVariant: String? = settings.webSearchEnabled ? "web_search_20260209" : nil
     let chunker = SentenceChunker()
-    var full = ""
-    var stopReason = ""
+    var spoken = ""
+    var totalUsage = ClaudeClient.Usage()
     let started = Date()
     var firstTokenAt: Date?
+    var iterations = 0
 
     do {
-      for try await event in ClaudeClient.stream(
-        apiKey: settings.apiKey,
-        model: settings.model,
-        effort: settings.effort,
-        system: Conversation.systemPrompt(settings: settings),
-        messages: conversation.apiMessages()
-      ) {
-        if Task.isCancelled { break }
-        switch event {
-        case .modelUsed(let model):
-          log("Model: \(model)")
-        case .text(let text):
-          if firstTokenAt == nil {
-            firstTokenAt = Date()
-            log("İlk kelime \(String(format: "%.1f", Date().timeIntervalSince(started))) sn sonra.")
-          }
-          full += text
-          for sentence in chunker.push(text) {
-            state = .speaking
-            speaker.speak(sentence)
-          }
-        case .stopReason(let reason):
-          stopReason = reason
-        case .done:
-          break
+      while iterations < 6 {
+        iterations += 1
+        var toolCalls: [ClaudeClient.ToolUse] = []
+        var stop = ""
+        var blocks: [[String: Any]] = []
+        var toolList = localTools
+        if let variant = searchVariant {
+          toolList.append(Tools.webSearchDefinition(variant: variant))
         }
+        let request = ClaudeClient.Request(
+          apiKey: settings.apiKey,
+          model: settings.model,
+          effort: settings.effort,
+          system: Conversation.systemBlocks(settings: settings),
+          messages: messages,
+          tools: toolList,
+          maxTokens: 1024
+        )
+        do {
+          for try await event in ClaudeClient.stream(request) {
+            if Task.isCancelled { break }
+            switch event {
+            case .modelUsed(let model):
+              if iterations == 1 { log("Model: \(model)") }
+            case .text(let text):
+              if firstTokenAt == nil {
+                firstTokenAt = Date()
+                log("İlk kelime \(String(format: "%.1f", Date().timeIntervalSince(started))) sn sonra.")
+              }
+              spoken += text
+              for sentence in chunker.push(text) {
+                state = .speaking
+                speaker.speak(sentence)
+              }
+            case .toolUse(let call):
+              toolCalls.append(call)
+            case .stopReason(let reason):
+              stop = reason
+            case .usage(let usage):
+              totalUsage.add(usage)
+            case .assistantBlocks(let list):
+              blocks = list
+            case .done:
+              break
+            }
+          }
+        } catch let error as ClaudeClient.APIError
+          where error.status == 400 && searchVariant != nil && error.message.lowercased().contains("web_search")
+        {
+          // Bu model bu arama sürümünü desteklemiyor: eski sürümü dene, o da olmazsa aramasız devam et.
+          if searchVariant == "web_search_20260209" {
+            searchVariant = "web_search_20250305"
+            log("Web araması eski sürüme düşürüldü.")
+          } else {
+            searchVariant = nil
+            log("Web araması kapatıldı: \(error.message)")
+          }
+          iterations -= 1
+          continue
+        }
+
+        if Task.isCancelled {
+          conversation.dropUnansweredUser()
+          return
+        }
+
+        if stop == "tool_use", !toolCalls.isEmpty {
+          if !blocks.isEmpty {
+            messages.append(["role": "assistant", "content": blocks])
+          }
+          var results: [[String: Any]] = []
+          for call in toolCalls {
+            let (text, isError) = await Tools.run(call)
+            log("Araç sonucu (\(call.name)): \(text.prefix(200))")
+            results.append(["type": "tool_result", "tool_use_id": call.id, "content": text, "is_error": isError])
+          }
+          messages.append(["role": "user", "content": results])
+          continue
+        }
+        if stop == "pause_turn", !blocks.isEmpty {
+          messages.append(["role": "assistant", "content": blocks])
+          continue
+        }
+        break
       }
-      if Task.isCancelled {
-        conversation.dropUnansweredUser()
-        return
-      }
+
       for sentence in chunker.flush() {
         state = .speaking
         speaker.speak(sentence)
       }
-      if stopReason == "refusal" && full.isEmpty {
+      let finalText = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
+      if finalText.isEmpty {
         conversation.dropUnansweredUser()
-        speakAndLog("Bu isteğe cevap veremiyorum.")
+        speakAndLog("Bir cevap üretemedim, tekrar sorar mısın?")
       } else {
-        conversation.appendAssistant(text: full)
-        transcript.append(TranscriptEntry(role: .edith, text: full))
-        log("Cevap tamam (\(full.count) karakter, \(String(format: "%.1f", Date().timeIntervalSince(started))) sn).")
+        conversation.appendAssistant(text: finalText)
+        let cost = UsageTracker.shared.recordAnswer(model: settings.model, usage: totalUsage)
+        transcript.append(TranscriptEntry(role: .edith, text: finalText, costUSD: cost))
+        log("Cevap tamam: \(finalText.count) karakter, \(String(format: "%.1f", Date().timeIntervalSince(started))) sn, \(UsageTracker.formatUSD(cost)), arama \(totalUsage.searches), tur \(iterations).")
       }
     } catch is CancellationError {
       conversation.dropUnansweredUser()
@@ -331,6 +522,70 @@ final class EdithController {
       state = .speaking
     }
   }
+
+  // MARK: Çeviri
+
+  private func runTranslation(_ text: String) async {
+    let settings = Settings.shared
+    guard !settings.apiKey.isEmpty else {
+      speakAndLog("Önce ayarlardan API anahtarını girmen lazım.")
+      return
+    }
+    let target = settings.translationTarget
+    let targetLabel = Settings.translationLabel(target)
+    let source = translationDirection == .toTarget ? "Türkçe" : targetLabel
+    let destination = translationDirection == .toTarget ? targetLabel : "Türkçe"
+    let speakLanguage = translationDirection == .toTarget ? target : "tr-TR"
+    let system = "Sen simultane çevirmensin. Verilen konuşmayı \(source) dilinden \(destination) diline çevir. Sadece çeviriyi yaz; açıklama, tırnak, ek yorum, ön ek yok. Konuşma dilinde, doğal ve kısa tut. Anlaşılmayan bir kısım varsa en olası anlamı ver."
+    let request = ClaudeClient.Request(
+      apiKey: settings.apiKey,
+      model: settings.model,
+      effort: "low",
+      system: [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]],
+      messages: [["role": "user", "content": text]],
+      maxTokens: 400
+    )
+    let chunker = SentenceChunker()
+    var full = ""
+    var usage = ClaudeClient.Usage()
+    do {
+      for try await event in ClaudeClient.stream(request) {
+        if Task.isCancelled { return }
+        switch event {
+        case .text(let t):
+          full += t
+          for sentence in chunker.push(t) {
+            state = .speaking
+            speaker.speak(sentence, language: speakLanguage)
+          }
+        case .usage(let u):
+          usage = u
+        default:
+          break
+        }
+      }
+      for sentence in chunker.flush() {
+        state = .speaking
+        speaker.speak(sentence, language: speakLanguage)
+      }
+      let cost = UsageTracker.shared.recordAnswer(model: settings.model, usage: usage)
+      transcript.append(TranscriptEntry(role: .edith, text: full.trimmingCharacters(in: .whitespacesAndNewlines), costUSD: cost))
+    } catch is CancellationError {
+      return
+    } catch {
+      lastError = error.localizedDescription
+      log("Çeviri hatası: \(error.localizedDescription)")
+      speakAndLog("Çeviri yapılamadı.")
+    }
+    if !speaker.isSpeaking {
+      state = .followUp
+      followUpUntil = .distantFuture
+    } else {
+      state = .speaking
+    }
+  }
+
+  // MARK: Yardımcılar
 
   private static func spokenError(for message: String) -> String {
     let lower = message.lowercased()
@@ -359,7 +614,6 @@ final class EdithController {
 
   // MARK: Uyandırma kelimesi
 
-  /// Metinde uyandırma kelimesi var mı ve ondan sonra ne söylendi.
   static func extractCommand(from text: String, wakeWord: String) -> (Bool, String) {
     let tokens = normalize(text).split(separator: " ").map(String.init)
     guard !tokens.isEmpty else { return (false, "") }
@@ -370,7 +624,6 @@ final class EdithController {
     guard let index = tokens.lastIndex(where: { wakeSet.contains($0) }) else {
       return (false, "")
     }
-    // Komut, orijinal metindeki karşılık gelen kelimelerden alınır (Türkçe karakterler korunur).
     let original = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     if original.count == tokens.count {
       return (true, original[(index + 1)...].joined(separator: " "))

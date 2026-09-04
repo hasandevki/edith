@@ -59,7 +59,9 @@ enum ElevenLabsClient {
   // MARK: Metinden sese (PCM 16-bit, mono, 24 kHz)
 
   /// Ses verisini geldikçe parça parça verir. İlk parça küçüktür ki oynatma hemen başlasın.
-  static func streamPCM(text: String, voiceId: String, modelId: String, apiKey: String) -> AsyncThrowingStream<Data, Error> {
+  static func streamPCM(
+    text: String, voiceId: String, modelId: String, apiKey: String, languageCode: String = "tr"
+  ) -> AsyncThrowingStream<Data, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
         do {
@@ -83,7 +85,7 @@ enum ElevenLabsClient {
           ]
           // Dil zorlaması sadece Flash/Turbo modellerinde destekleniyor.
           if modelId.contains("flash") || modelId.contains("turbo") {
-            body["language_code"] = "tr"
+            body["language_code"] = languageCode
           }
           request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

@@ -19,6 +19,7 @@ final class SpeechListener {
   var holdRestart = false
   private(set) var isRunning = false
   private(set) var usesOnDevice = false
+  private(set) var localeIdentifier = "tr-TR"
 
   private let engine = AVAudioEngine()
   private var recognizer: SFSpeechRecognizer?
@@ -47,12 +48,12 @@ final class SpeechListener {
 
   func start() throws {
     guard !isRunning else { return }
-    guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "tr-TR")) else {
-      throw NSError(domain: "Edith", code: 1, userInfo: [NSLocalizedDescriptionKey: "Türkçe konuşma tanıma bu cihazda yok."])
+    guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier)) else {
+      throw NSError(domain: "Edith", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(localeIdentifier) konuşma tanıma bu cihazda yok."])
     }
     self.recognizer = recognizer
     usesOnDevice = recognizer.supportsOnDeviceRecognition
-    log("Konuşma tanıma: \(usesOnDevice ? "cihaz üstü" : "sunucu tabanlı") (tr-TR)")
+    log("Konuşma tanıma: \(usesOnDevice ? "cihaz üstü" : "sunucu tabanlı") (\(localeIdentifier))")
 
     try installTap()
     try engine.start()
@@ -90,6 +91,23 @@ final class SpeechListener {
   func restartRecognition() {
     guard isRunning else { return }
     endTask()
+    beginTask()
+    onEvent?(.restarted)
+  }
+
+  /// Tanıma dilini değiştirir (çeviri modu için). Çalışıyorsa görev yeni dille yeniden başlar.
+  func setLocale(_ identifier: String) {
+    guard identifier != localeIdentifier else { return }
+    localeIdentifier = identifier
+    guard isRunning else { return }
+    guard let newRecognizer = SFSpeechRecognizer(locale: Locale(identifier: identifier)) else {
+      log("\(identifier) için konuşma tanıma yok.")
+      return
+    }
+    endTask()
+    recognizer = newRecognizer
+    usesOnDevice = newRecognizer.supportsOnDeviceRecognition
+    log("Konuşma tanıma dili: \(identifier) (\(usesOnDevice ? "cihaz üstü" : "sunucu tabanlı"))")
     beginTask()
     onEvent?(.restarted)
   }

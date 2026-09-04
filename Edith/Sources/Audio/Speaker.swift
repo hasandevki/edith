@@ -10,13 +10,18 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
   private(set) var isSpeaking = false
   var onFinishedAll: (() -> Void)?
 
+  private struct Item {
+    let text: String
+    let language: String?
+  }
+
   @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
   @ObservationIgnored private let pcm = PCMPlayer(sampleRate: ElevenLabsClient.sampleRate)
-  @ObservationIgnored private var queue: [String] = []
+  @ObservationIgnored private var queue: [Item] = []
   @ObservationIgnored private var worker: Task<Void, Never>?
   @ObservationIgnored private var generation = 0
   @ObservationIgnored private var appleContinuation: CheckedContinuation<Void, Never>?
-  @ObservationIgnored private var prefetch: (text: String, task: Task<[Data], Error>)?
+  @ObservationIgnored private var prefetch: (item: Item, task: Task<[Data], Error>)?
   @ObservationIgnored private var elevenDisabledUntil = Date.distantPast
 
   override init() {
@@ -27,10 +32,11 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
 
   // MARK: Genel API
 
-  func speak(_ text: String) {
+  /// `language`: "tr-TR", "en-US" gibi; nil ise Türkçe.
+  func speak(_ text: String, language: String? = nil) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
-    queue.append(trimmed)
+    queue.append(Item(text: trimmed, language: language))
     isSpeaking = true
     if worker == nil {
       let gen = generation
@@ -58,11 +64,11 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
 
   private func drain(_ gen: Int) async {
     while !queue.isEmpty, !Task.isCancelled, gen == generation {
-      let text = queue.removeFirst()
-      if let next = queue.first, useEleven, prefetch?.text != next {
+      let item = queue.removeFirst()
+      if let next = queue.first, useEleven, !(prefetch.map { $0.item.text == next.text && $0.item.language == next.language } ?? false) {
         startPrefetch(next)
       }
-      await say(text, gen: gen)
+      await say(item, gen: gen)
     }
     guard gen == generation else { return }
     worker = nil
@@ -74,10 +80,10 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     Settings.shared.elevenReady && Date() >= elevenDisabledUntil
   }
 
-  private func say(_ text: String, gen: Int) async {
+  private func say(_ item: Item, gen: Int) async {
     if useEleven {
       do {
-        try await sayEleven(text, gen: gen)
+        try await sayEleven(item, gen: gen)
         return
       } catch is CancellationError {
         return
@@ -89,31 +95,39 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
       }
     }
     guard gen == generation else { return }
-    await sayApple(text)
+    await sayApple(item)
   }
 
   // MARK: ElevenLabs
 
-  private func startPrefetch(_ text: String) {
+  private static func languageCode(_ language: String?) -> String {
+    guard let language, let prefix = language.split(separator: "-").first else { return "tr" }
+    return String(prefix).lowercased()
+  }
+
+  private func startPrefetch(_ item: Item) {
     prefetch?.task.cancel()
     let settings = Settings.shared
+    let code = Self.languageCode(item.language)
     let task = Task<[Data], Error> {
       var chunks: [Data] = []
       for try await chunk in ElevenLabsClient.streamPCM(
-        text: text, voiceId: settings.elevenVoiceId, modelId: settings.elevenModel, apiKey: settings.elevenKey
+        text: item.text, voiceId: settings.elevenVoiceId, modelId: settings.elevenModel,
+        apiKey: settings.elevenKey, languageCode: code
       ) {
         chunks.append(chunk)
       }
       return chunks
     }
-    prefetch = (text, task)
+    prefetch = (item, task)
   }
 
-  private func sayEleven(_ text: String, gen: Int) async throws {
+  private func sayEleven(_ item: Item, gen: Int) async throws {
     let settings = Settings.shared
     try pcm.begin()
     let started = Date()
-    if let ready = prefetch, ready.text == text {
+    UsageTracker.shared.recordEleven(characters: item.text.count, model: settings.elevenModel)
+    if let ready = prefetch, ready.item.text == item.text, ready.item.language == item.language {
       prefetch = nil
       let chunks = try await ready.task.value
       guard gen == generation else { return }
@@ -121,7 +135,8 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     } else {
       var first = true
       for try await chunk in ElevenLabsClient.streamPCM(
-        text: text, voiceId: settings.elevenVoiceId, modelId: settings.elevenModel, apiKey: settings.elevenKey
+        text: item.text, voiceId: settings.elevenVoiceId, modelId: settings.elevenModel,
+        apiKey: settings.elevenKey, languageCode: Self.languageCode(item.language)
       ) {
         guard gen == generation else { return }
         if first {
@@ -137,9 +152,13 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
 
   // MARK: Apple
 
-  private func sayApple(_ text: String) async {
-    let utterance = AVSpeechUtterance(string: text)
-    utterance.voice = Self.bestTurkishVoice()
+  private func sayApple(_ item: Item) async {
+    let utterance = AVSpeechUtterance(string: item.text)
+    if let language = item.language, !language.lowercased().hasPrefix("tr") {
+      utterance.voice = Self.bestVoice(for: language)
+    } else {
+      utterance.voice = Self.bestTurkishVoice()
+    }
     utterance.rate = Settings.shared.speechRate
     utterance.prefersAssistiveTechnologySettings = false
     await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
@@ -149,8 +168,12 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
   }
 
   static func turkishVoices() -> [AVSpeechSynthesisVoice] {
+    voices(prefix: "tr")
+  }
+
+  static func voices(prefix: String) -> [AVSpeechSynthesisVoice] {
     AVSpeechSynthesisVoice.speechVoices()
-      .filter { $0.language.lowercased().hasPrefix("tr") }
+      .filter { $0.language.lowercased().hasPrefix(prefix.lowercased()) }
       .sorted { a, b in
         if a.quality != b.quality { return a.quality.rawValue > b.quality.rawValue }
         return a.name < b.name
@@ -163,6 +186,11 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
       return voice
     }
     return turkishVoices().first ?? AVSpeechSynthesisVoice(language: "tr-TR")
+  }
+
+  static func bestVoice(for language: String) -> AVSpeechSynthesisVoice? {
+    let prefix = String(language.split(separator: "-").first ?? Substring(language))
+    return voices(prefix: prefix).first ?? AVSpeechSynthesisVoice(language: language)
   }
 
   // MARK: AVSpeechSynthesizerDelegate

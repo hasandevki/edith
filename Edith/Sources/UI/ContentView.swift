@@ -1,11 +1,14 @@
 import SwiftUI
 
 struct ContentView: View {
-  @Bindable var glasses: GlassesManager
-  @Bindable var edith: EdithController
+  var glasses: GlassesManager
+  var edith: EdithController
   @State private var showSettings = false
   @State private var showLogs = false
+  @State private var showMemory = false
   @State private var typed = ""
+  private var usage = UsageTracker.shared
+  private var timers = TimerService.shared
 
   var body: some View {
     NavigationStack {
@@ -14,6 +17,7 @@ struct ContentView: View {
           stateCard
           glassesCard
           listeningCard
+          translationCard
           transcriptCard
         }
         .padding()
@@ -24,11 +28,20 @@ struct ContentView: View {
           Button { showLogs = true } label: { Image(systemName: "list.bullet.rectangle") }
         }
         ToolbarItem(placement: .topBarTrailing) {
-          Button { showSettings = true } label: { Image(systemName: "gearshape") }
+          HStack {
+            Button { showMemory = true } label: { Image(systemName: "brain") }
+            Button { showSettings = true } label: { Image(systemName: "gearshape") }
+          }
         }
       }
       .sheet(isPresented: $showSettings) { SettingsView(edith: edith) }
       .sheet(isPresented: $showLogs) { LogView() }
+      .sheet(isPresented: $showMemory) { MemoryView() }
+      .task {
+        if Settings.shared.autoStartListening, !edith.isListeningActive {
+          await edith.startListening()
+        }
+      }
     }
   }
 
@@ -55,6 +68,14 @@ struct ContentView: View {
           .lineLimit(2)
           .multilineTextAlignment(.center)
       }
+      Text(usageLine)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      if !timers.timers.isEmpty {
+        Text("Zamanlayıcı: " + timers.timers.map { "\($0.label) \(CalendarService.timeOnly($0.fireAt))" }.joined(separator: ", "))
+          .font(.caption)
+          .foregroundStyle(.orange)
+      }
       if let error = edith.lastError ?? glasses.lastError {
         Text(error)
           .font(.footnote)
@@ -65,6 +86,14 @@ struct ContentView: View {
     .frame(maxWidth: .infinity)
     .padding()
     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+  }
+
+  private var usageLine: String {
+    let day = usage.today
+    var line = "Bugün: \(UsageTracker.formatUSD(day.costUSD)) · \(day.questions) soru"
+    if day.searches > 0 { line += " · \(day.searches) arama" }
+    if day.elevenCredits > 0 { line += " · ElevenLabs \(Int(day.elevenCredits)) kredi" }
+    return line
   }
 
   private var stateColor: Color {
@@ -141,7 +170,7 @@ struct ContentView: View {
     VStack(alignment: .leading, spacing: 10) {
       Label("Kulak", systemImage: "waveform")
         .font(.headline)
-      Text("Uyandırma: \"\(Settings.shared.wakeWord)\" de, sonra soruyu sor.")
+      Text("Uyandırma: \"\(Settings.shared.wakeWord)\" de, sonra soruyu sor. Cevaptan sonra bir süre kelimesiz devam edebilirsin.")
         .font(.footnote)
         .foregroundStyle(.secondary)
       HStack {
@@ -175,6 +204,42 @@ struct ContentView: View {
     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
   }
 
+  private var translationCard: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Label("Çeviri modu", systemImage: "globe")
+          .font(.headline)
+        Spacer()
+        Toggle("", isOn: Binding(
+          get: { edith.translationMode },
+          set: { edith.setTranslation(enabled: $0) }
+        ))
+        .labelsHidden()
+        .disabled(!edith.isListeningActive)
+      }
+      let target = Settings.translationLabel(Settings.shared.translationTarget)
+      if edith.translationMode {
+        Picker("Yön", selection: Binding(
+          get: { edith.translationDirection == .toTarget ? 0 : 1 },
+          set: { edith.setTranslationDirection($0 == 0 ? .toTarget : .fromTarget) }
+        )) {
+          Text("Ben: Türkçe → \(target)").tag(0)
+          Text("Karşı taraf: \(target) → Türkçe").tag(1)
+        }
+        .pickerStyle(.segmented)
+        Text("Uyandırma kelimesi gerekmez; söylenen her şey çevrilir. \"Edith, çeviriyi kapat\" ile çıkılır.")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      } else {
+        Text("Sesle: \"Edith, çeviri modunu aç\". Hedef dil ayarlardan (şu an \(target)).")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding()
+    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+  }
+
   private var transcriptCard: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack {
@@ -195,9 +260,16 @@ struct ContentView: View {
             .font(.caption.weight(.bold))
             .foregroundStyle(color(for: entry.role))
             .frame(width: 44, alignment: .leading)
-          Text(entry.text)
-            .font(.callout)
-            .textSelection(.enabled)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(entry.text)
+              .font(.callout)
+              .textSelection(.enabled)
+            if let cost = entry.costUSD {
+              Text(UsageTracker.formatUSD(cost))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
         }
       }
     }

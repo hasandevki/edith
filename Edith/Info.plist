@@ -65,7 +65,14 @@
 		<string>audio</string>
 		<string>bluetooth-central</string>
 		<string>bluetooth-peripheral</string>
+		<string>location</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Edith nerede olduğunu bilsin: yakındaki yerler, yol tarifi, hava durumu.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Edith takvimine etkinlik ekleyip programını okuyabilsin.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Edith senin için hatırlatıcı oluşturabilsin.</string>
 
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Ray-Ban Meta gözlüğüne bağlanmak için gerekli.</string>

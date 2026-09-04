@@ -24,6 +24,10 @@ struct SettingsView: View {
           Picker("Düşünme derinliği", selection: $settings.effort) {
             ForEach(Settings.efforts, id: \.id) { Text($0.label).tag($0.id) }
           }
+          Toggle("Web araması (güncel bilgi, hava, fiyat)", isOn: $settings.webSearchEnabled)
+          Text("Her arama yaklaşık 1 sent. Edith sadece gerektiğinde arar.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
           Button(pinging ? "Deneniyor..." : "API'yi dene") { ping() }
             .disabled(pinging || settings.apiKey.isEmpty)
           if !pingResult.isEmpty {
@@ -39,13 +43,26 @@ struct SettingsView: View {
             TextEditor(text: $settings.userNotes)
               .frame(minHeight: 90)
           }
-          Toggle("Yüksek çözünürlüklü fotoğraf çek (yavaş, deklanşör sesi)", isOn: $settings.useHiResPhoto)
           Picker("Cevaptan sonra dinlemeye devam", selection: $settings.followUpSeconds) {
             ForEach(Settings.followUpOptions, id: \.id) { Text($0.label).tag($0.id) }
           }
-          Text("Bu süre içinde \"Edith\" demeden konuşabilirsin; sessiz kalırsan pencere kapanır.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+          Toggle("Uygulama açılınca dinlemeye başla", isOn: $settings.autoStartListening)
+          Picker("Çeviri hedef dili", selection: $settings.translationTarget) {
+            ForEach(Settings.translationTargets, id: \.id) { Text($0.label).tag($0.id) }
+          }
+        }
+
+        Section("Gözler") {
+          Toggle("Yüksek çözünürlüklü fotoğraf çek (yavaş, deklanşör sesi)", isOn: $settings.useHiResPhoto)
+          Toggle("Sahne hafızası (kamera açıkken arka planda not alır)", isOn: $settings.sceneMemoryEnabled)
+          if settings.sceneMemoryEnabled {
+            Picker("Not aralığı", selection: $settings.sceneIntervalMinutes) {
+              ForEach(Settings.sceneIntervals, id: \.id) { Text($0.label).tag($0.id) }
+            }
+            Text("Her not küçük bir kare + kısa açıklama, yaklaşık yarım sent. 'Anahtarı nerede gördün?' ve 'bugün neler yaptım?' bu notlardan cevaplanır.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
         }
 
         Section("Ses motoru") {
@@ -104,6 +121,12 @@ struct SettingsView: View {
             Slider(value: $settings.speechRate, in: 0.35...0.65)
           }
           Text("Daha doğal Apple sesi için: iPhone Ayarlar → Erişilebilirlik → Sesli İçerik → Sesler → Türkçe → Yelda (Geliştirilmiş) indir.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+
+        Section("Kısayollar ve Action Button") {
+          Text("Kısayollar uygulamasında \"Edith'e sor\" eylemi var. iPhone Ayarlar → Action Button → Kısayol → \"Edith'e sor\" seçersen yan tuşa basılı tutunca Edith seni dinler. Siri'ye \"Edith'e sor\" da diyebilirsin.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
