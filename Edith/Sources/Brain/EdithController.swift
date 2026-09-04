@@ -177,7 +177,7 @@ final class EdithController {
     case .partial(let text), .final(let text):
       lastHeard = text
       guard Date() >= ignoreSpeechUntil else { return }
-      let (heardWake, command) = Self.extractCommand(from: text, wakeWord: Settings.shared.wakeWord)
+      let (heardWake, command) = Self.extractCommand(from: text, wakeWords: Self.wakeVariants(settings: Settings.shared))
 
       if translationMode {
         handleTranslationSpeech(text: text, heardWake: heardWake, command: command, isFinal: { if case .final = event { return true }; return false }())
@@ -614,14 +614,39 @@ final class EdithController {
 
   // MARK: Uyandırma kelimesi
 
-  static func extractCommand(from text: String, wakeWord: String) -> (Bool, String) {
+  /// Ayarlardaki isim ve uyandırma kelimesi için, konuşma tanımanın yazabileceği varyantlar.
+  static func wakeVariants(settings: Settings) -> Set<String> {
+    var set: Set<String> = []
+    for word in [settings.wakeWord, settings.assistantName] {
+      let n = normalize(word)
+      guard !n.isEmpty else { continue }
+      set.insert(n)
+      switch n {
+      case "edith", "edit":
+        set.formUnion(["edith", "edit", "idit", "editt", "eddit", "edid", "edits"])
+      case "jarvis", "carvis":
+        set.formUnion(["jarvis", "carvis", "carviz", "jarviz", "charvis", "jarwis", "carwis", "cervis", "jarvi", "carvi", "jarvs", "carvs"])
+      default:
+        break
+      }
+    }
+    return set
+  }
+
+  /// Kelime bir varyanta eşitse ya da varyant + kısa Türkçe ek ise ("carvise", "edithim") eşleşir.
+  static func matchesWake(_ token: String, _ wakeWords: Set<String>) -> Bool {
+    if wakeWords.contains(token) { return true }
+    for word in wakeWords where word.count >= 4 && token.hasPrefix(word) && token.count - word.count <= 3 {
+      return true
+    }
+    return false
+  }
+
+  static func extractCommand(from text: String, wakeWords: Set<String>) -> (Bool, String) {
     let tokens = normalize(text).split(separator: " ").map(String.init)
     guard !tokens.isEmpty else { return (false, "") }
-    var wakeSet: Set<String> = ["edith", "edit", "idit", "editt", "eddit", "edid", "edits"]
-    let custom = normalize(wakeWord)
-    if !custom.isEmpty { wakeSet.insert(custom) }
 
-    guard let index = tokens.lastIndex(where: { wakeSet.contains($0) }) else {
+    guard let index = tokens.lastIndex(where: { matchesWake($0, wakeWords) }) else {
       return (false, "")
     }
     let original = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)

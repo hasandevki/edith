@@ -55,6 +55,7 @@ final class Settings: @unchecked Sendable {
   var webSearchEnabled: Bool { didSet { d.set(webSearchEnabled, forKey: "webSearchEnabled") } }
 
   // Edith
+  var assistantName: String { didSet { d.set(assistantName, forKey: "assistantName") } }
   var wakeWord: String { didSet { d.set(wakeWord, forKey: "wakeWord") } }
   var userName: String { didSet { d.set(userName, forKey: "userName") } }
   var userNotes: String { didSet { d.set(userNotes, forKey: "userNotes") } }
@@ -87,6 +88,7 @@ final class Settings: @unchecked Sendable {
     model = d.string(forKey: "model") ?? "claude-opus-5"
     effort = d.string(forKey: "effort") ?? "low"
     webSearchEnabled = d.object(forKey: "webSearchEnabled") as? Bool ?? true
+    assistantName = d.string(forKey: "assistantName") ?? "Edith"
     wakeWord = d.string(forKey: "wakeWord") ?? "Edith"
     userName = d.string(forKey: "userName") ?? "Hasan"
     userNotes = d.string(forKey: "userNotes") ?? ""

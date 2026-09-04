@@ -27,7 +27,7 @@ struct ContentView: View {
         }
         .padding()
       }
-      .navigationTitle("Edith")
+      .navigationTitle(Settings.shared.assistantName)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
           Button { showLogs = true } label: { Image(systemName: "list.bullet.rectangle") }
@@ -264,7 +264,7 @@ struct ContentView: View {
           Text(prefix(for: entry.role))
             .font(.caption.weight(.bold))
             .foregroundStyle(color(for: entry.role))
-            .frame(width: 44, alignment: .leading)
+            .frame(width: 56, alignment: .leading)
           VStack(alignment: .leading, spacing: 2) {
             Text(entry.text)
               .font(.callout)
@@ -301,7 +301,7 @@ struct ContentView: View {
   private func prefix(for role: EdithController.TranscriptEntry.Role) -> String {
     switch role {
     case .user: return "Sen"
-    case .edith: return "Edith"
+    case .edith: return Settings.shared.assistantName
     case .system: return "•"
     }
   }

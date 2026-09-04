@@ -36,7 +36,11 @@ struct SettingsView: View {
         }
 
         Section("Edith") {
+          TextField("Asistanın adı (Edith, Jarvis...)", text: $settings.assistantName)
           TextField("Uyandırma kelimesi", text: $settings.wakeWord)
+          Text("Jarvis için ikisine de \"Jarvis\" yaz; \"Carvis\", \"Çarvis\", \"Carvis'e\" gibi duyulan halleri de anlar.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
           TextField("Senin adın", text: $settings.userName)
           VStack(alignment: .leading) {
             Text("Edith senin hakkında ne bilsin?").font(.footnote).foregroundStyle(.secondary)
@@ -72,7 +76,7 @@ struct SettingsView: View {
           }
           .pickerStyle(.segmented)
           Button("Sesi dene") {
-            edith.speaker.speak("Merhaba, ben Edith. Beni duyabiliyor musun? Bugün nasılsın?")
+            edith.speaker.speak("Merhaba, ben \(settings.assistantName). Beni duyabiliyor musun? Bugün nasılsın?")
           }
         }
 
