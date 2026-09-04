@@ -99,6 +99,8 @@ enum ClaudeClient {
           var order: [Int] = []
           var textAcc: [Int: String] = [:]
           var jsonAcc: [Int: String] = [:]
+          var thinkingAcc: [Int: String] = [:]
+          var signatureAcc: [Int: String] = [:]
           var usage = Usage()
 
           for try await line in bytes.lines {
@@ -147,6 +149,14 @@ enum ClaudeClient {
                 if let partial = delta["partial_json"] as? String {
                   jsonAcc[index, default: ""] += partial
                 }
+              case "thinking_delta":
+                if let thinking = delta["thinking"] as? String {
+                  thinkingAcc[index, default: ""] += thinking
+                }
+              case "signature_delta":
+                if let signature = delta["signature"] as? String {
+                  signatureAcc[index, default: ""] += signature
+                }
               default:
                 break
               }
@@ -157,6 +167,12 @@ enum ClaudeClient {
               if blockType == "text" {
                 block["text"] = textAcc[index] ?? ""
                 block.removeValue(forKey: "citations")
+              } else if blockType == "thinking" {
+                // Düşünme bloğu imzasıyla geri gönderilmeli; aksi halde araç döngüsünde 400 döner.
+                block["thinking"] = thinkingAcc[index] ?? (block["thinking"] as? String ?? "")
+                if let signature = signatureAcc[index], !signature.isEmpty {
+                  block["signature"] = signature
+                }
               } else if blockType == "tool_use" || blockType == "server_tool_use" {
                 let raw = jsonAcc[index] ?? ""
                 var input: [String: Any] = [:]
@@ -189,8 +205,13 @@ enum ClaudeClient {
 
             case "message_stop":
               let ordered = order.compactMap { blocks[$0] }.filter { block in
-                if block["type"] as? String == "text" {
+                let type = block["type"] as? String
+                if type == "text" {
                   return !((block["text"] as? String ?? "").isEmpty)
+                }
+                if type == "thinking" {
+                  // İmzasız düşünme bloğu geri gönderilemez.
+                  return !((block["signature"] as? String ?? "").isEmpty)
                 }
                 return true
               }

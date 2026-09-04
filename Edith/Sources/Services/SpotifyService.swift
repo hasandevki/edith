@@ -149,7 +149,7 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
 
   func search(_ query: String, kind: String) async throws -> Item? {
     let types = kind == "any" ? "track,artist,album,playlist" : kind
-    let (data, status) = try await request("GET", "/v1/search", query: ["q": query, "type": types, "limit": "3", "market": "from_token"])
+    let (data, status) = try await request("GET", "/v1/search", query: ["q": query, "type": types, "limit": "3"])
     guard status == 200, let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw APIError(message: "Spotify arama hatası (HTTP \(status)): \(Self.spotifyMessage(data))")
     }
@@ -223,7 +223,7 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
   }
 
   func nowPlaying() async throws -> String {
-    let (data, status) = try await request("GET", "/v1/me/player/currently-playing", query: ["market": "from_token"])
+    let (data, status) = try await request("GET", "/v1/me/player/currently-playing")
     guard status == 200, let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
       let item = json["item"] as? [String: Any], let name = item["name"] as? String
     else { return "Şu an bir şey çalmıyor." }
