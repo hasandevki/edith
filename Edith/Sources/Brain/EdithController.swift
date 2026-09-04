@@ -52,6 +52,8 @@ final class EdithController {
   @ObservationIgnored private var promptedForCommand = false
   @ObservationIgnored private var ignoreSpeechUntil = Date.distantPast
   @ObservationIgnored private var followUpUntil = Date.distantPast
+  /// Model → çalışan web araması sürümü (nil = bu model aramayı desteklemiyor). Her soruda yeniden denenmesin diye.
+  @ObservationIgnored private var searchVariantByModel: [String: String?] = [:]
 
   private let commandSilence: TimeInterval = 1.3
   private let promptAfter: TimeInterval = 2.5
@@ -397,6 +399,9 @@ final class EdithController {
     var messages = conversation.apiMessages()
     let localTools = Tools.definitions()
     var searchVariant: String? = settings.webSearchEnabled ? "web_search_20260209" : nil
+    if settings.webSearchEnabled, let known = searchVariantByModel[settings.model] {
+      searchVariant = known
+    }
     let chunker = SentenceChunker()
     var spoken = ""
     var totalUsage = ClaudeClient.Usage()
@@ -457,11 +462,12 @@ final class EdithController {
           // Bu model bu arama sürümünü desteklemiyor: eski sürümü dene, o da olmazsa aramasız devam et.
           if searchVariant == "web_search_20260209" {
             searchVariant = "web_search_20250305"
-            log("Web araması eski sürüme düşürüldü.")
+            log("Web araması eski sürüme düşürüldü (\(settings.model)): \(error.message)")
           } else {
             searchVariant = nil
-            log("Web araması kapatıldı: \(error.message)")
+            log("Web araması bu modelde kapatıldı (\(settings.model)): \(error.message)")
           }
+          searchVariantByModel[settings.model] = searchVariant
           iterations -= 1
           continue
         }

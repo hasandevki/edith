@@ -83,7 +83,8 @@ enum ClaudeClient {
             request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
             body["fallbacks"] = "default"
           }
-          request.httpBody = try JSONSerialization.data(withJSONObject: body)
+          // sortedKeys: sözlük sırası her açılışta değişmesin, önbellek ön eki sabit kalsın.
+          request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
           let (bytes, response) = try await URLSession.shared.bytes(for: request)
           let status = (response as? HTTPURLResponse)?.statusCode ?? 0
