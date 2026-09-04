@@ -31,20 +31,23 @@ enum ClaudeClient {
           request.setValue("application/json", forHTTPHeaderField: "Content-Type")
           request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
           request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-          // Güvenlik sınıflandırıcısı reddederse sunucu tarafında başka modele düşer.
-          request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
 
-          let body: [String: Any] = [
+          var body: [String: Any] = [
             "model": model,
             "max_tokens": maxTokens,
             "stream": true,
-            "fallbacks": "default",
             "system": [
               ["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]
             ],
             "output_config": ["effort": effort],
             "messages": messages,
           ]
+          // Güvenlik sınıflandırıcısı reddederse sunucu tarafında başka modele düşer.
+          // Sadece Opus 5 / Fable ailesi kabul ediyor; Sonnet'e gönderilirse 400 döner.
+          if Self.supportsFallbacks(model) {
+            request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
+            body["fallbacks"] = "default"
+          }
           request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
           let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -111,6 +114,10 @@ enum ClaudeClient {
       if case .text(let t) = event { out += t }
     }
     return out
+  }
+
+  static func supportsFallbacks(_ model: String) -> Bool {
+    model.hasPrefix("claude-opus-5") || model.hasPrefix("claude-fable-5") || model.hasPrefix("claude-mythos")
   }
 
   private static func errorMessage(from raw: String) -> String? {

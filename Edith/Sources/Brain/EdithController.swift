@@ -160,6 +160,7 @@ final class EdithController {
     wakeTime = Date()
     promptedForCommand = false
     speech.holdRestart = true
+    Chime.shared.play(.wake)
     log("Uyandırma kelimesi duyuldu. Komut: \"\(initialCommand)\"")
   }
 
@@ -181,6 +182,7 @@ final class EdithController {
       log("Komut gelmedi, dinlemeye dönülüyor.")
       speech.holdRestart = false
       speech.restartRecognition()
+      Chime.shared.play(.cancel)
       state = .listening
     }
   }
@@ -191,6 +193,7 @@ final class EdithController {
     speech.holdRestart = false
     if isListeningActive { speech.restartRecognition() }
     commandText = ""
+    if isListeningActive { Chime.shared.play(.sent) }
     state = .thinking
     transcript.append(TranscriptEntry(role: .user, text: trimmed))
     requestTask?.cancel()
