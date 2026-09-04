@@ -151,7 +151,7 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
     let types = kind == "any" ? "track,artist,album,playlist" : kind
     let (data, status) = try await request("GET", "/v1/search", query: ["q": query, "type": types, "limit": "3", "market": "from_token"])
     guard status == 200, let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-      throw APIError(message: "Spotify arama hatası (HTTP \(status)).")
+      throw APIError(message: "Spotify arama hatası (HTTP \(status)): \(Self.spotifyMessage(data))")
     }
     func first(_ key: String) -> [String: Any]? {
       ((json[key] as? [String: Any])?["items"] as? [[String: Any]])?.first { $0["uri"] != nil }
@@ -192,11 +192,15 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
       lastStatus = "Çalıyor: \(item.name) — \(item.detail)"
       return lastStatus
     case 403:
-      return "Spotify uzaktan oynatmayı reddetti (HTTP 403). Genelde Premium gerektiği içindir."
+      let reason = Self.spotifyMessage(data)
+      log("Spotify 403: \(reason)")
+      return "Spotify uzaktan oynatmayı reddetti: \(reason). (Premium yoksa ya da giriş yapılan hesap dashboard'daki hesap değilse olur.)"
     case 404:
       return "Spotify'da aktif cihaz yok. Spotify uygulamasını bir kez açıp bir şey çal, sonra tekrar dene."
     default:
-      return "Spotify oynatma hatası (HTTP \(status)): \(String(decoding: data.prefix(160), as: UTF8.self))"
+      let reason = Self.spotifyMessage(data)
+      log("Spotify \(status): \(reason)")
+      return "Spotify oynatma hatası (HTTP \(status)): \(reason)"
     }
   }
 
@@ -212,9 +216,9 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
     let (data, status) = try await request(method, path)
     switch status {
     case 200, 202, 204: return "Tamam."
-    case 403: return "Spotify reddetti (HTTP 403); Premium gerekiyor olabilir."
+    case 403: return "Spotify reddetti: \(Self.spotifyMessage(data))"
     case 404: return "Spotify'da aktif cihaz yok."
-    default: return "Spotify hatası (HTTP \(status)): \(String(decoding: data.prefix(160), as: UTF8.self))"
+    default: return "Spotify hatası (HTTP \(status)): \(Self.spotifyMessage(data))"
     }
   }
 
@@ -229,6 +233,17 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
   }
 
   // MARK: Yardımcılar
+
+  /// Spotify'ın {"error":{"status":..,"message":".."}} gövdesinden mesajı çeker.
+  private static func spotifyMessage(_ data: Data) -> String {
+    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let error = json["error"] as? [String: Any], let message = error["message"] as? String
+    {
+      return message
+    }
+    let raw = String(decoding: data.prefix(160), as: UTF8.self)
+    return raw.isEmpty ? "(boş cevap)" : raw
+  }
 
   nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
     MainActor.assumeIsolated {
