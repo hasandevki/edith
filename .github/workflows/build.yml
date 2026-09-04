@@ -5,6 +5,9 @@ on:
     branches: ["main", "master"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build unsigned IPA
@@ -75,3 +78,21 @@ jobs:
           name: build-log
           path: build.log
           if-no-files-found: ignore
+
+      # Derleme kırılırsa hata satırlarını ci-logs dalına yazar; oradan giriş yapmadan okunabilir.
+      - name: Publish build errors to ci-logs branch
+        if: failure()
+        run: |
+          set +e
+          mkdir -p /tmp/cilogs
+          grep -E "error:" build.log | sed -E 's#/Users/runner/work/edith/edith/##g' | sort -u > /tmp/cilogs/errors.txt
+          cp build.log /tmp/cilogs/build.log
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git checkout -q --orphan ci-logs
+          git rm -rfq --cached . >/dev/null 2>&1
+          rm -rf ./* .github .gitignore
+          cp /tmp/cilogs/errors.txt /tmp/cilogs/build.log .
+          git add errors.txt build.log
+          git commit -q -m "build errors $(date -u +%FT%TZ)"
+          git push -f origin ci-logs
