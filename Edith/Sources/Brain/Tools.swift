@@ -108,11 +108,16 @@ enum Tools {
     ]
   }
 
+  /// Web araması tanımı. Anthropic bazı ülke kodlarını (örn. MK) kabul etmiyor;
+  /// reddedilen ülkelerde konum bilgisi eklenmez.
   @MainActor
-  static func webSearchDefinition(variant: String) -> [String: Any] {
+  static func webSearchDefinition(variant: String, rejectedCountries: Set<String>) -> [String: Any] {
     var definition: [String: Any] = ["type": variant, "name": "web_search", "max_uses": 3]
     if let location = LocationService.shared.userLocationForSearch {
-      definition["user_location"] = location
+      let country = (location["country"] as? String ?? "").uppercased()
+      if country.isEmpty || !rejectedCountries.contains(country) {
+        definition["user_location"] = location
+      }
     }
     return definition
   }

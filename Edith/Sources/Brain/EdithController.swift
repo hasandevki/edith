@@ -54,6 +54,8 @@ final class EdithController {
   @ObservationIgnored private var followUpUntil = Date.distantPast
   /// Model → çalışan web araması sürümü (nil = bu model aramayı desteklemiyor). Her soruda yeniden denenmesin diye.
   @ObservationIgnored private var searchVariantByModel: [String: String?] = [:]
+  /// Web aramasının konum bilgisinde kabul etmediği ülke kodları (örn. MK).
+  @ObservationIgnored private var searchRejectedCountries: Set<String> = []
 
   private let commandSilence: TimeInterval = 1.3
   private let promptAfter: TimeInterval = 2.5
@@ -417,7 +419,7 @@ final class EdithController {
         var blocks: [[String: Any]] = []
         var toolList = localTools
         if let variant = searchVariant {
-          toolList.append(Tools.webSearchDefinition(variant: variant))
+          toolList.append(Tools.webSearchDefinition(variant: variant, rejectedCountries: searchRejectedCountries))
         }
         let request = ClaudeClient.Request(
           apiKey: settings.apiKey,
@@ -459,6 +461,17 @@ final class EdithController {
         } catch let error as ClaudeClient.APIError
           where error.status == 400 && searchVariant != nil && error.message.lowercased().contains("web_search")
         {
+          let lower = error.message.lowercased()
+          if lower.contains("user_location") || lower.contains("country") {
+            // Konum bilgisindeki ülke kabul edilmiyor: aynı sürümü konumsuz dene.
+            let country = (LocationService.shared.placemark?.isoCountryCode ?? "").uppercased()
+            if !country.isEmpty, !searchRejectedCountries.contains(country) {
+              searchRejectedCountries.insert(country)
+              log("Web araması: \(country) ülke kodu kabul edilmiyor, arama konumsuz gönderilecek. (\(error.message))")
+              iterations -= 1
+              continue
+            }
+          }
           // Bu model bu arama sürümünü desteklemiyor: eski sürümü dene, o da olmazsa aramasız devam et.
           if searchVariant == "web_search_20260209" {
             searchVariant = "web_search_20250305"
