@@ -1,19 +1,26 @@
 import AVFoundation
 import Foundation
 
-/// Paylaşılan ses oturumu: mikrofon + hoparlör, Bluetooth kulaklık (gözlük) rotası.
+/// Paylaşılan ses oturumu.
+/// Normal mod: gözlük mikrofonu + hoparlörü (Bluetooth HFP, telefon görüşmesi kalitesi).
+/// Müzik modu: çıkış gözlükten yüksek kalite (A2DP), mikrofon telefondan; Spotify bozulmasın diye.
 enum AudioSessionManager {
+  private(set) static var musicMode = false
+
   static func configure() throws {
+    try configure(musicMode: musicMode)
+  }
+
+  static func configure(musicMode enabled: Bool) throws {
+    musicMode = enabled
     let session = AVAudioSession.sharedInstance()
-    // voiceChat: yankı bastırma açık; gözlüğün hoparlöründen çıkan sesi mikrofondan ayıklar.
-    // allowBluetoothHFP: gözlük mikrofonu ve hoparlörü aynı anda kullanılabilsin.
-    try session.setCategory(
-      .playAndRecord,
-      mode: .voiceChat,
-      options: [.allowBluetoothHFP, .duckOthers]
-    )
+    if enabled {
+      try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker])
+    } else {
+      try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .duckOthers])
+    }
     try session.setActive(true)
-    log("Ses oturumu aktif. Rota: \(routeDescription())")
+    log("Ses oturumu aktif (\(enabled ? "müzik modu" : "normal")). Rota: \(routeDescription())")
   }
 
   static func deactivate() {

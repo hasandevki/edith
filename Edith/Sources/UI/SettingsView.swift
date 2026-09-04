@@ -10,6 +10,9 @@ struct SettingsView: View {
   @State private var voices: [ElevenLabsClient.Voice] = []
   @State private var loadingVoices = false
   @State private var voicesMessage = ""
+  var spotify = SpotifyService.shared
+  @State private var connectingSpotify = false
+  @State private var spotifyMessage = ""
 
   var body: some View {
     NavigationStack {
@@ -117,6 +120,26 @@ struct SettingsView: View {
           }
         }
 
+        Section("Spotify") {
+          SecureField("Spotify Client ID", text: $settings.spotifyClientId)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+          if spotify.isConnected {
+            Text("Spotify bağlı.").font(.footnote).foregroundStyle(.green)
+            Button("Spotify bağlantısını kes", role: .destructive) { spotify.disconnect() }
+          } else {
+            Button(connectingSpotify ? "Bağlanıyor..." : "Spotify'a bağlan") { connectSpotify() }
+              .disabled(settings.spotifyClientId.isEmpty || connectingSpotify)
+          }
+          if !spotifyMessage.isEmpty {
+            Text(spotifyMessage).font(.footnote).foregroundStyle(.secondary)
+          }
+          Toggle("Müzik çalınca müzik moduna geç", isOn: $settings.autoMusicMode)
+          Text("Müzik modu: müzik gözlükten yüksek kalitede çalar, mikrofon o sırada telefona geçer. Kurulum: developer.spotify.com/dashboard → Create app → Redirect URI: edith://spotify-callback → Client ID'yi yapıştır. Uzaktan oynatma için Spotify Premium gerekir.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+
         Section("Apple sesi (yedek)") {
           Picker("Ses", selection: $settings.voiceIdentifier) {
             Text("Otomatik (en iyi Türkçe)").tag("")
@@ -168,6 +191,20 @@ struct SettingsView: View {
         pingResult = "Hata: \(error.localizedDescription)"
       }
       pinging = false
+    }
+  }
+
+  private func connectSpotify() {
+    connectingSpotify = true
+    spotifyMessage = ""
+    Task {
+      do {
+        try await spotify.connect(clientId: settings.spotifyClientId)
+        spotifyMessage = "Bağlandı. \"Carvis, Sezen Aksu aç\" diyebilirsin."
+      } catch {
+        spotifyMessage = "Hata: \(error.localizedDescription)"
+      }
+      connectingSpotify = false
     }
   }
 

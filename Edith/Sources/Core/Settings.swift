@@ -76,6 +76,11 @@ final class Settings: @unchecked Sendable {
   var sceneMemoryEnabled: Bool { didSet { d.set(sceneMemoryEnabled, forKey: "sceneMemoryEnabled") } }
   var sceneIntervalMinutes: Int { didSet { d.set(sceneIntervalMinutes, forKey: "sceneIntervalMinutes") } }
 
+  // Spotify
+  var spotifyClientId: String { didSet { d.set(spotifyClientId, forKey: "spotifyClientId") } }
+  /// Spotify çalınca otomatik müzik moduna geç (çıkış A2DP, mikrofon telefon).
+  var autoMusicMode: Bool { didSet { d.set(autoMusicMode, forKey: "autoMusicMode") } }
+
   // Ses: Apple
   var voiceIdentifier: String { didSet { d.set(voiceIdentifier, forKey: "voiceIdentifier") } }
   var speechRate: Float { didSet { d.set(speechRate, forKey: "speechRate") } }
@@ -110,6 +115,8 @@ final class Settings: @unchecked Sendable {
     translationTarget = d.string(forKey: "translationTarget") ?? "en-US"
     sceneMemoryEnabled = d.object(forKey: "sceneMemoryEnabled") as? Bool ?? false
     sceneIntervalMinutes = d.object(forKey: "sceneIntervalMinutes") as? Int ?? 3
+    spotifyClientId = d.string(forKey: "spotifyClientId") ?? ""
+    autoMusicMode = d.object(forKey: "autoMusicMode") as? Bool ?? true
     voiceIdentifier = d.string(forKey: "voiceIdentifier") ?? ""
     speechRate = d.object(forKey: "speechRate") as? Float ?? 0.5
     ttsProvider = d.string(forKey: "ttsProvider") ?? "apple"

@@ -105,6 +105,51 @@ enum Tools {
         "Kurulu tüm zamanlayıcıları iptal eder.",
         [:], []
       ),
+      tool(
+        "find_contact",
+        "Rehberde kişi arar (ad, soyad ya da takma ad) ve numaralarını döner.",
+        ["name": ["type": "string", "description": "Rehberdeki ad"]],
+        ["name"]
+      ),
+      tool(
+        "call_contact",
+        "Kişiyi arar. via=phone: normal arama (iOS 'Ara?' diye onay sorar). via=facetime: FaceTime sesli. via=whatsapp: WhatsApp sohbetini açar, kullanıcı arama simgesine dokunur (WhatsApp dışarıdan aramayı başlatmaya izin vermez). 'Annem' gibi ilişki adlarını önce hafızadan gerçek ada çevir; yoksa kullanıcıya sor.",
+        [
+          "name": ["type": "string", "description": "Rehberdeki ad"],
+          "via": ["type": "string", "enum": ["phone", "facetime", "whatsapp"]],
+        ],
+        ["name", "via"]
+      ),
+      tool(
+        "send_message",
+        "Kişiye mesaj hazırlar. via=whatsapp ya da imessage. Uygulama metin yazılı halde açılır ve kullanıcı Gönder'e dokunur; otomatik gönderilmez. Metni kullanıcının ağzından, kısa ve doğal yaz.",
+        [
+          "name": ["type": "string", "description": "Rehberdeki ad"],
+          "text": ["type": "string", "description": "Gönderilecek mesaj"],
+          "via": ["type": "string", "enum": ["whatsapp", "imessage"]],
+        ],
+        ["name", "text", "via"]
+      ),
+      tool(
+        "spotify_play",
+        "Spotify'da arayıp telefonda çalar (Spotify Premium gerekir). kind: track, artist, album, playlist ya da any.",
+        [
+          "query": ["type": "string", "description": "Şarkı, sanatçı, albüm ya da çalma listesi adı"],
+          "kind": ["type": "string", "enum": ["track", "artist", "album", "playlist", "any"]],
+        ],
+        ["query", "kind"]
+      ),
+      tool(
+        "spotify_control",
+        "Spotify'ı kontrol eder: pause (durdur), resume (devam), next (sonraki), previous (önceki).",
+        ["action": ["type": "string", "enum": ["pause", "resume", "next", "previous"]]],
+        ["action"]
+      ),
+      tool(
+        "spotify_now_playing",
+        "Spotify'da şu an ne çaldığını söyler.",
+        [:], []
+      ),
     ]
   }
 
@@ -178,6 +223,53 @@ enum Tools {
       case "cancel_timers":
         let count = TimerService.shared.cancelAll()
         return (count == 0 ? "Kurulu zamanlayıcı yok." : "\(count) zamanlayıcı iptal edildi.", false)
+
+      case "find_contact":
+        let matches = try await ContactsService.shared.find(str("name"))
+        return (ContactsService.shared.describe(matches), false)
+
+      case "call_contact":
+        let target = str("name")
+        let matches = try await ContactsService.shared.find(target)
+        guard let match = matches.first, let number = match.primaryNumber else {
+          return ("Rehberde \"\(target)\" bulunamadı ya da numarası yok. İlişki adıysa (annem gibi) hafızaya bak, yoksa kullanıcıya tam adını sor.", true)
+        }
+        let result = await ContactsService.shared.call(number: number, via: str("via"))
+        return ("\(match.name): \(result)", false)
+
+      case "send_message":
+        let target = str("name")
+        let matches = try await ContactsService.shared.find(target)
+        guard let match = matches.first, let number = match.primaryNumber else {
+          return ("Rehberde \"\(target)\" bulunamadı ya da numarası yok.", true)
+        }
+        let result = await ContactsService.shared.message(number: number, text: str("text"), via: str("via"))
+        return ("\(match.name): \(result)", false)
+
+      case "spotify_play":
+        let kind = str("kind").isEmpty ? "any" : str("kind")
+        guard let item = try await SpotifyService.shared.search(str("query"), kind: kind) else {
+          return ("Spotify'da \"\(str("query"))\" bulunamadı.", true)
+        }
+        let result = try await SpotifyService.shared.play(item)
+        if result.hasPrefix("Çalıyor"), Settings.shared.autoMusicMode, !AudioSessionManager.musicMode {
+          try? AudioSessionManager.configure(musicMode: true)
+        }
+        return (result, false)
+
+      case "spotify_control":
+        let action = str("action")
+        let result = try await SpotifyService.shared.control(action)
+        if action == "pause", AudioSessionManager.musicMode {
+          try? AudioSessionManager.configure(musicMode: false)
+        }
+        if action == "resume", Settings.shared.autoMusicMode, !AudioSessionManager.musicMode {
+          try? AudioSessionManager.configure(musicMode: true)
+        }
+        return (result, false)
+
+      case "spotify_now_playing":
+        return (try await SpotifyService.shared.nowPlaying(), false)
 
       default:
         return ("Bilinmeyen araç: \(call.name)", true)

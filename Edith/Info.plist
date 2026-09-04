@@ -40,7 +40,14 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>fb-viewapp</string>
+		<string>whatsapp</string>
+		<string>spotify</string>
+		<string>tel</string>
+		<string>facetime-audio</string>
+		<string>sms</string>
 	</array>
+	<key>NSContactsUsageDescription</key>
+	<string>Jarvis "annemi ara" dediğinde rehberden kişiyi bulabilsin.</string>
 
 	<!-- Meta Wearables Device Access Toolkit -->
 	<key>MWDAT</key>
