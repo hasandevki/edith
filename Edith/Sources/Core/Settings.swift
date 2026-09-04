@@ -32,6 +32,15 @@ final class Settings: @unchecked Sendable {
   var userNotes: String { didSet { d.set(userNotes, forKey: "userNotes") } }
   var useHiResPhoto: Bool { didSet { d.set(useHiResPhoto, forKey: "useHiResPhoto") } }
   var autoStartListening: Bool { didSet { d.set(autoStartListening, forKey: "autoStartListening") } }
+  /// Cevaptan sonra uyandırma kelimesi gerekmeden dinlemeye devam edilen süre (0 = kapalı).
+  var followUpSeconds: Int { didSet { d.set(followUpSeconds, forKey: "followUpSeconds") } }
+  static let followUpOptions: [(id: Int, label: String)] = [
+    (0, "Kapalı (her seferinde Edith de)"),
+    (5, "5 saniye"),
+    (8, "8 saniye"),
+    (12, "12 saniye"),
+    (20, "20 saniye"),
+  ]
 
   // Ses: Apple
   var voiceIdentifier: String { didSet { d.set(voiceIdentifier, forKey: "voiceIdentifier") } }
@@ -60,6 +69,7 @@ final class Settings: @unchecked Sendable {
     userNotes = d.string(forKey: "userNotes") ?? ""
     useHiResPhoto = d.object(forKey: "useHiResPhoto") as? Bool ?? false
     autoStartListening = d.object(forKey: "autoStartListening") as? Bool ?? false
+    followUpSeconds = d.object(forKey: "followUpSeconds") as? Int ?? 8
     voiceIdentifier = d.string(forKey: "voiceIdentifier") ?? ""
     speechRate = d.object(forKey: "speechRate") as? Float ?? 0.5
     ttsProvider = d.string(forKey: "ttsProvider") ?? "apple"

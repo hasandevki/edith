@@ -40,6 +40,12 @@ struct SettingsView: View {
               .frame(minHeight: 90)
           }
           Toggle("Yüksek çözünürlüklü fotoğraf çek (yavaş, deklanşör sesi)", isOn: $settings.useHiResPhoto)
+          Picker("Cevaptan sonra dinlemeye devam", selection: $settings.followUpSeconds) {
+            ForEach(Settings.followUpOptions, id: \.id) { Text($0.label).tag($0.id) }
+          }
+          Text("Bu süre içinde \"Edith\" demeden konuşabilirsin; sessiz kalırsan pencere kapanır.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
         }
 
         Section("Ses motoru") {

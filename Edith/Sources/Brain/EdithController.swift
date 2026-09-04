@@ -10,6 +10,7 @@ final class EdithController {
   enum State: String {
     case idle = "Uykuda"
     case listening = "Dinliyor"
+    case followUp = "Devam edebilirsin"
     case capturing = "Seni dinliyorum..."
     case thinking = "Düşünüyor"
     case speaking = "Konuşuyor"
@@ -42,6 +43,7 @@ final class EdithController {
   @ObservationIgnored private var wakeTime = Date()
   @ObservationIgnored private var promptedForCommand = false
   @ObservationIgnored private var ignoreSpeechUntil = Date.distantPast
+  @ObservationIgnored private var followUpUntil = Date.distantPast
 
   private let commandSilence: TimeInterval = 1.3
   private let promptAfter: TimeInterval = 2.5
@@ -51,11 +53,29 @@ final class EdithController {
     self.glasses = glasses
     speaker.onFinishedAll = { [weak self] in
       guard let self, self.state == .speaking else { return }
-      self.state = self.isListeningActive ? .listening : .idle
+      self.finishedSpeaking()
     }
     speech.onEvent = { [weak self] event in
       self?.handleSpeech(event)
     }
+  }
+
+  /// Edith sustu: ayar açıksa bir süre uyandırma kelimesi olmadan dinle.
+  private func finishedSpeaking() {
+    guard isListeningActive else {
+      state = .idle
+      return
+    }
+    let seconds = Settings.shared.followUpSeconds
+    guard seconds > 0 else {
+      state = .listening
+      return
+    }
+    // Tamponu sıfırla ki Edith'in kendi sesinden kalan yankı komut sayılmasın.
+    speech.restartRecognition()
+    ignoreSpeechUntil = Date().addingTimeInterval(0.5)
+    followUpUntil = Date().addingTimeInterval(TimeInterval(seconds))
+    state = .followUp
   }
 
   // MARK: Dinleme
@@ -127,6 +147,12 @@ final class EdithController {
       switch state {
       case .listening, .idle:
         if heardWake { enterCapturing(initialCommand: command) }
+      case .followUp:
+        // Devam penceresi: uyandırma kelimesi şart değil.
+        let spoken = heardWake ? command : text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if heardWake || spoken.count >= 2 {
+          enterCapturing(initialCommand: spoken, chime: heardWake)
+        }
       case .thinking, .speaking:
         if heardWake {
           log("Araya girildi.")
@@ -153,18 +179,27 @@ final class EdithController {
     }
   }
 
-  private func enterCapturing(initialCommand: String) {
+  private func enterCapturing(initialCommand: String, chime: Bool = true) {
     state = .capturing
     commandText = initialCommand
     commandLastChange = Date()
     wakeTime = Date()
     promptedForCommand = false
     speech.holdRestart = true
-    Chime.shared.play(.wake)
-    log("Uyandırma kelimesi duyuldu. Komut: \"\(initialCommand)\"")
+    if chime {
+      Chime.shared.play(.wake)
+      log("Uyandırma kelimesi duyuldu. Komut: \"\(initialCommand)\"")
+    } else {
+      log("Devam penceresinde konuşma: \"\(initialCommand)\"")
+    }
   }
 
   private func tick() {
+    if state == .followUp, Date() >= followUpUntil {
+      state = .listening
+      log("Devam penceresi kapandı, uyandırma kelimesi bekleniyor.")
+      return
+    }
     guard state == .capturing else { return }
     let now = Date()
     if !commandText.isEmpty {

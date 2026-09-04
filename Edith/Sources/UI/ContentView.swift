@@ -71,6 +71,7 @@ struct ContentView: View {
     switch edith.state {
     case .idle: return .gray
     case .listening: return .blue
+    case .followUp: return .teal
     case .capturing: return .green
     case .thinking: return .orange
     case .speaking: return .purple
