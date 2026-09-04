@@ -10,6 +10,11 @@ struct ContentView: View {
   private var usage = UsageTracker.shared
   private var timers = TimerService.shared
 
+  init(glasses: GlassesManager, edith: EdithController) {
+    self.glasses = glasses
+    self.edith = edith
+  }
+
   var body: some View {
     NavigationStack {
       ScrollView {
