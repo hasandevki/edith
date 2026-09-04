@@ -52,6 +52,8 @@ final class EdithController {
   @ObservationIgnored private var promptedForCommand = false
   @ObservationIgnored private var ignoreSpeechUntil = Date.distantPast
   @ObservationIgnored private var followUpUntil = Date.distantPast
+  /// Sesli etkileşim için müziği biz duraklattık; bitince devam ettirilecek.
+  @ObservationIgnored private var musicPausedForVoice = false
   /// Model → çalışan web araması sürümü (nil = bu model aramayı desteklemiyor). Her soruda yeniden denenmesin diye.
   @ObservationIgnored private var searchVariantByModel: [String: String?] = [:]
   /// Web aramasının konum bilgisinde kabul etmediği ülke kodları (örn. MK).
@@ -115,6 +117,7 @@ final class EdithController {
     if state != .speaking && state != .thinking {
       state = .idle
     }
+    interactionEnded()
   }
 
   /// Uyandırma kelimesi olmadan, elle komut toplamaya başla (Action Button, Siri, buton).
@@ -249,7 +252,27 @@ final class EdithController {
     }
   }
 
+  /// Uyandırma anında müziği duraklat (kullanıcı kendisi durdurmadıysa sonra devam eder).
+  private func pauseMusicForVoice() {
+    let spotify = SpotifyService.shared
+    guard spotify.isPlaying, !musicPausedForVoice else { return }
+    musicPausedForVoice = true
+    Task { _ = try? await spotify.control("pause") }
+    log("Müzik sesli komut için duraklatıldı.")
+  }
+
+  /// Etkileşim bitti: müzik bizim yüzümüzden duraklamışsa ve kullanıcı durdurmadıysa devam et.
+  private func interactionEnded() {
+    guard musicPausedForVoice else { return }
+    musicPausedForVoice = false
+    let spotify = SpotifyService.shared
+    guard !spotify.userPaused else { return }
+    Task { _ = try? await spotify.control("resume") }
+    log("Müzik devam ettiriliyor.")
+  }
+
   private func enterCapturing(initialCommand: String, chime: Bool = true) {
+    pauseMusicForVoice()
     state = .capturing
     commandText = initialCommand
     commandLastChange = Date()
@@ -268,6 +291,7 @@ final class EdithController {
     if state == .followUp, Date() >= followUpUntil {
       state = .listening
       log("Devam penceresi kapandı, uyandırma kelimesi bekleniyor.")
+      interactionEnded()
       return
     }
     guard state == .capturing else { return }
@@ -297,6 +321,7 @@ final class EdithController {
       speech.restartRecognition()
       Chime.shared.play(.cancel)
       state = .listening
+      interactionEnded()
     }
   }
 
@@ -356,6 +381,7 @@ final class EdithController {
     let seconds = Settings.shared.followUpSeconds
     guard seconds > 0 else {
       state = .listening
+      interactionEnded()
       return
     }
     speech.restartRecognition()

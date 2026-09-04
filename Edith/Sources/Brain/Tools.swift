@@ -260,11 +260,12 @@ enum Tools {
       case "spotify_control":
         let action = str("action")
         let result = try await SpotifyService.shared.control(action)
-        if action == "pause", AudioSessionManager.musicMode {
-          try? AudioSessionManager.configure(musicMode: false)
-        }
-        if action == "resume", Settings.shared.autoMusicMode, !AudioSessionManager.musicMode {
-          try? AudioSessionManager.configure(musicMode: true)
+        if action == "pause" {
+          SpotifyService.shared.userPaused = true
+          if AudioSessionManager.musicMode { try? AudioSessionManager.configure(musicMode: false) }
+        } else {
+          SpotifyService.shared.userPaused = false
+          if Settings.shared.autoMusicMode, !AudioSessionManager.musicMode { try? AudioSessionManager.configure(musicMode: true) }
         }
         return (result, false)
 

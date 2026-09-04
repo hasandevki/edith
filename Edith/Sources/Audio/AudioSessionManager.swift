@@ -14,8 +14,9 @@ enum AudioSessionManager {
   static func configure(musicMode enabled: Bool) throws {
     musicMode = enabled
     let session = AVAudioSession.sharedInstance()
-    if enabled {
-      try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker])
+    if enabled, Settings.shared.musicMic == "phone" {
+      // Çıkış gözlükten yüksek kalite (A2DP), mikrofon telefondan. Hoparlöre yönlendirme YOK.
+      try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothA2DP, .mixWithOthers])
     } else {
       try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .duckOthers])
     }

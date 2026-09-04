@@ -135,6 +135,10 @@ struct SettingsView: View {
             Text(spotifyMessage).font(.footnote).foregroundStyle(.secondary)
           }
           Toggle("Müzik çalınca müzik moduna geç", isOn: $settings.autoMusicMode)
+          Picker("Müzik çalarken mikrofon", selection: $settings.musicMic) {
+            Text("Telefon (müzik kaliteli)").tag("phone")
+            Text("Gözlük (müzik telefon kalitesinde)").tag("glasses")
+          }
           Text("Müzik modu: müzik gözlükten yüksek kalitede çalar, mikrofon o sırada telefona geçer. Kurulum: developer.spotify.com/dashboard → Create app → Redirect URI: edith://spotify-callback → Client ID'yi yapıştır. Uzaktan oynatma için Spotify Premium gerekir.")
             .font(.footnote)
             .foregroundStyle(.secondary)

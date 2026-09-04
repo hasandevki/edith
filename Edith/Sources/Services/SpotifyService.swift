@@ -18,6 +18,10 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
 
   private(set) var isConnected: Bool
   private(set) var lastStatus = ""
+  /// Bizim başlattığımız kadarıyla müzik çalıyor mu.
+  private(set) var isPlaying = false
+  /// Kullanıcı açıkça durdurdu (sesli komuttan sonra otomatik devam etme).
+  var userPaused = false
 
   @ObservationIgnored private var accessToken: String
   @ObservationIgnored private var refreshToken: String
@@ -179,16 +183,27 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
   }
 
   func play(_ item: Item) async throws -> String {
-    var device = try await deviceId()
-    if device == nil, let url = URL(string: "spotify:") {
-      _ = await UIApplication.shared.open(url)
-      try? await Task.sleep(for: .seconds(3))
-      device = try await deviceId()
+    let device = try await deviceId()
+    if device == nil {
+      // Spotify kapalı: Connect cihazı yok. Spotify'ın kendi bağlantısıyla doğrudan başlat.
+      if let url = URL(string: item.uri + ":play") {
+        let opened = await UIApplication.shared.open(url)
+        if opened {
+          isPlaying = true
+          userPaused = false
+          lastStatus = "Çalıyor: \(item.name) — \(item.detail)"
+          log("Spotify deep link ile başlatıldı: \(item.uri)")
+          return lastStatus + " (Spotify açıldı)"
+        }
+      }
+      return "Spotify uygulaması açılamadı; yüklü mü?"
     }
     let body: [String: Any] = item.isTrack ? ["uris": [item.uri]] : ["context_uri": item.uri]
     let (data, status) = try await request("PUT", "/v1/me/player/play", query: device.map { ["device_id": $0] } ?? [:], body: body)
     switch status {
     case 200, 202, 204:
+      isPlaying = true
+      userPaused = false
       lastStatus = "Çalıyor: \(item.name) — \(item.detail)"
       return lastStatus
     case 403:
@@ -215,7 +230,9 @@ final class SpotifyService: NSObject, ASWebAuthenticationPresentationContextProv
     }
     let (data, status) = try await request(method, path)
     switch status {
-    case 200, 202, 204: return "Tamam."
+    case 200, 202, 204:
+      isPlaying = action != "pause"
+      return "Tamam."
     case 403: return "Spotify reddetti: \(Self.spotifyMessage(data))"
     case 404: return "Spotify'da aktif cihaz yok."
     default: return "Spotify hatası (HTTP \(status)): \(Self.spotifyMessage(data))"
