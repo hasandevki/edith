@@ -25,7 +25,9 @@ struct SettingsView: View {
             ForEach(Settings.efforts, id: \.id) { Text($0.label).tag($0.id) }
           }
           Toggle("Web araması (güncel bilgi, hava, fiyat)", isOn: $settings.webSearchEnabled)
-          Text("Her arama yaklaşık 1 sent. Edith sadece gerektiğinde arar.")
+          Toggle("Hızlı arama (filtresiz, birkaç saniye daha çabuk)", isOn: $settings.fastWebSearch)
+            .disabled(!settings.webSearchEnabled)
+          Text("Her arama yaklaşık 1 sent. Sadece gerektiğinde arar; arama başlayınca \"bakıyorum\" der.")
             .font(.footnote)
             .foregroundStyle(.secondary)
           Button(pinging ? "Deneniyor..." : "API'yi dene") { ping() }
@@ -46,6 +48,9 @@ struct SettingsView: View {
             Text("Edith senin hakkında ne bilsin?").font(.footnote).foregroundStyle(.secondary)
             TextEditor(text: $settings.userNotes)
               .frame(minHeight: 90)
+          }
+          Picker("Sustuktan sonra bekleme", selection: $settings.commandSilence) {
+            ForEach(Settings.silenceOptions, id: \.id) { Text($0.label).tag($0.id) }
           }
           Picker("Cevaptan sonra dinlemeye devam", selection: $settings.followUpSeconds) {
             ForEach(Settings.followUpOptions, id: \.id) { Text($0.label).tag($0.id) }

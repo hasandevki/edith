@@ -57,7 +57,7 @@ final class EdithController {
   /// Web aramasının konum bilgisinde kabul etmediği ülke kodları (örn. MK).
   @ObservationIgnored private var searchRejectedCountries: Set<String> = []
 
-  private let commandSilence: TimeInterval = 1.3
+  private var commandSilence: TimeInterval { Settings.shared.commandSilence }
   private let promptAfter: TimeInterval = 2.5
   private let giveUpAfter: TimeInterval = 10
 
@@ -400,10 +400,16 @@ final class EdithController {
 
     var messages = conversation.apiMessages()
     let localTools = Tools.definitions()
-    var searchVariant: String? = settings.webSearchEnabled ? "web_search_20260209" : nil
+    // Hızlı arama (filtresiz) önce; model kabul etmezse diğer sürüm, o da olmazsa aramasız.
+    let variantOrder = settings.fastWebSearch
+      ? ["web_search_20250305", "web_search_20260209"]
+      : ["web_search_20260209", "web_search_20250305"]
+    var searchVariant: String? = settings.webSearchEnabled ? variantOrder[0] : nil
     if settings.webSearchEnabled, let known = searchVariantByModel[settings.model] {
       searchVariant = known
     }
+    var fillerSpoken = false
+    let fillers = ["Bakıyorum.", "Bir saniye.", "Hemen bakıyorum."]
     let chunker = SentenceChunker()
     var spoken = ""
     var totalUsage = ClaudeClient.Usage()
@@ -448,6 +454,16 @@ final class EdithController {
               }
             case .toolUse(let call):
               toolCalls.append(call)
+              if spoken.isEmpty, !fillerSpoken {
+                fillerSpoken = true
+                speaker.speak("Bir saniye.")
+              }
+            case .serverToolStarted(let name):
+              log("Sunucu aracı: \(name)")
+              if spoken.isEmpty, !fillerSpoken {
+                fillerSpoken = true
+                speaker.speak(fillers.randomElement() ?? "Bakıyorum.")
+              }
             case .stopReason(let reason):
               stop = reason
             case .usage(let usage):
@@ -472,10 +488,10 @@ final class EdithController {
               continue
             }
           }
-          // Bu model bu arama sürümünü desteklemiyor: eski sürümü dene, o da olmazsa aramasız devam et.
-          if searchVariant == "web_search_20260209" {
-            searchVariant = "web_search_20250305"
-            log("Web araması eski sürüme düşürüldü (\(settings.model)): \(error.message)")
+          // Bu model bu arama sürümünü desteklemiyor: sıradaki sürümü dene, o da olmazsa aramasız devam et.
+          if let current = searchVariant, let index = variantOrder.firstIndex(of: current), index + 1 < variantOrder.count {
+            searchVariant = variantOrder[index + 1]
+            log("Web araması \(variantOrder[index + 1]) sürümüne geçti (\(settings.model)): \(error.message)")
           } else {
             searchVariant = nil
             log("Web araması bu modelde kapatıldı (\(settings.model)): \(error.message)")

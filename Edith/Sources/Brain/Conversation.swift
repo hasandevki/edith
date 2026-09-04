@@ -134,8 +134,10 @@ final class Conversation {
     get_location (nerede olduğu), search_places (yakındaki yerler), travel_time (ne kadar sürer), \
     open_navigation (yol tarifi başlat), remember ve forget (kalıcı hafıza), create_reminder, create_event, \
     list_events (iPhone hatırlatıcı ve takvim), set_timer ve cancel_timers (geri sayım). \
-    Güncel ya da yerel bir şey sorulursa tahmin etme, aracı kullan. Araç kullanmadan önce kısa bir şey \
-    söyleyebilirsin ("bakıyorum"). Hiçbir araç isteneni karşılamıyorsa bunu söyle, uydurma. \
+    Güncel ya da yerel bir şey sorulursa tahmin etme, aracı kullan. Web aramasında tek aramayla yetin; \
+    sonuç yeterliyse ikinci arama yapma. Araç kullanmadan önce "bakıyorum" gibi bir şey söyleme, \
+    uygulama bunu kendisi yapıyor; sonuç gelince doğrudan cevap ver. Hiçbir araç isteneni karşılamıyorsa \
+    bunu söyle, uydurma. \
     Tarih ve saatleri araçlara ISO 8601 biçiminde, saat dilimi ofsetiyle ver; "yarın sabah" gibi ifadeleri \
     aşağıdaki şu anki tarihe göre hesapla. Hafızadaki bilgiler soruyla ilgiliyse kendiliğinden kullan.
 
